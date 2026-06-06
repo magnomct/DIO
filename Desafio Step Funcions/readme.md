@@ -66,16 +66,16 @@ graph TD
     classDef startEnd fill:#232F3E,stroke:#232F3E,stroke-width:2px,color:#FFFFFF,rx:20,ry:20;
     classDef task fill:#E7157B,stroke:#C11368,stroke-width:2px,color:#FFFFFF,rx:5,ry:5;
     classDef wait fill:#F9E3B4,stroke:#D8B068,stroke-width:2px,color:#232F3E,rx:5,ry:5;
-    classDef choice fill:#FF9900,stroke:#E28700,stroke-width:2px,color:#FFFFFF;
+    classDef choice fill:#FF9900,stroke:#E28700,stroke-width:2px,color:#FFFFFF,rx:5,ry:5;
 
     %% Nós do diagrama
     Start([Início]):::startEnd
-    CreateSnapshot["⚙️ CreateSnapshot<br/>(ec2:createSnapshot)"]:::task
-    WaitForSnapshot>⏳ WaitForSnapshot<br/>(Wait 60s)]:::wait
-    CheckSnapshotStatus["🔍 CheckSnapshotStatus<br/>(ec2:describeSnapshots)"]:::task
-    IsCompleted{"IsSnapshot<br/>Completed?"}:::choice
-    NotifySuccess["✅ NotifySuccess<br/>(sns:publish)"]:::task
-    NotifyFailure["❌ NotifyFailure<br/>(sns:publish)"]:::task
+    CreateSnapshot["⚙️ CreateSnapshot (ec2:createSnapshot)"]:::task
+    WaitForSnapshot["⏳ WaitForSnapshot (Wait 60s)"]:::wait
+    CheckSnapshotStatus["🔍 CheckSnapshotStatus (ec2:describeSnapshots)"]:::task
+    IsCompleted{"Status = Completed?"}:::choice
+    NotifySuccess["✅ NotifySuccess (sns:publish)"]:::task
+    NotifyFailure["❌ NotifyFailure (sns:publish)"]:::task
     End([Fim]):::startEnd
 
     %% Fluxo (Arestas)
@@ -84,9 +84,9 @@ graph TD
     WaitForSnapshot --> CheckSnapshotStatus
     CheckSnapshotStatus --> IsCompleted
 
-    IsCompleted -->|State == 'completed'| NotifySuccess
-    IsCompleted -->|State == 'error'| NotifyFailure
-    IsCompleted -->|Default (Pending)| WaitForSnapshot
+    IsCompleted -->|Sim (completed)| NotifySuccess
+    IsCompleted -->|Erro (error)| NotifyFailure
+    IsCompleted -->|Aguardando (pending)| WaitForSnapshot
 
     NotifySuccess --> End
     NotifyFailure --> End
