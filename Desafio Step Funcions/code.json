@@ -1,0 +1,64 @@
+{
+  "Comment": "Orquestração de Backup de Volume EBS da Arquitetura EC2 com Notificação",
+  "StartAt": "CreateSnapshot",
+  "States": {
+    "CreateSnapshot": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:ec2:createSnapshot",
+      "Parameters": {
+        "VolumeId.$": "$.VolumeId",
+        "Description": "Backup automatizado via Step Functions - Arquitetura HA"
+      },
+      "ResultPath": "$.SnapshotResult",
+      "Next": "WaitForSnapshot"
+    },
+    "WaitForSnapshot": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "CheckSnapshotStatus"
+    },
+    "CheckSnapshotStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:ec2:describeSnapshots",
+      "Parameters": {
+        "SnapshotIds.$": "States.Array($.SnapshotResult.SnapshotId)"
+      },
+      "ResultPath": "$.SnapshotStatus",
+      "Next": "IsSnapshotCompleted"
+    },
+    "IsSnapshotCompleted": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.SnapshotStatus.Snapshots[0].State",
+          "StringEquals": "completed",
+          "Next": "NotifySuccess"
+        },
+        {
+          "Variable": "$.SnapshotStatus.Snapshots[0].State",
+          "StringEquals": "error",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "Default": "WaitForSnapshot"
+    },
+    "NotifySuccess": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:REGIAO:ID_DA_CONTA:TopicDeNotificacao",
+        "Message": "✅ Sucesso: O backup (Snapshot) do volume EBS da instância EC2 foi concluído com segurança."
+      },
+      "End": true
+    },
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:REGIAO:ID_DA_CONTA:TopicDeNotificacao",
+        "Message": "❌ Alerta: Ocorreu uma falha ao tentar criar o snapshot do volume EBS."
+      },
+      "End": true
+    }
+  }
+}
