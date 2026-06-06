@@ -33,95 +33,127 @@ Este workflow automatiza o seguinte processo:
 
 ## 2. Diagrama Lógico de Estados
 
-O comportamento do fluxo segue a máquina de estados abaixo:
-
-````text
-       [ Início ]
-           │
-           ▼
-    [ CreateSnapshot ]
-           │
-           ▼
- ┌──► [ WaitForSnapshot ] (Espera de 60s)
- │         │
- │         ▼
- │  [ CheckSnapshotStatus ]
- │         │
- │         ▼
- └─── [ IsSnapshotCompleted? ] ──( erro )──► [ NotifyFailure ] ──► [ Fim ]
-           │
-      ( completed )
-           │
-           ▼
-    [ NotifySuccess ]
-           │
-           ▼
-        [ Fim ]
-
-O comportamento do fluxo segue a máquina de estados abaixo, onde implementamos um loop de espera (Wait) para monitorar a conclusão do backup em background:
+O comportamento do fluxo segue a máquina de estados abaixo. O loop de espera garante que a infraestrutura tem tempo para processar o backup em *background*.
 
 ```mermaid
-graph TD
-    %% Estilos para combinar com a paleta da AWS
-    classDef startEnd fill:#232F3E,stroke:#232F3E,stroke-width:2px,color:#FFFFFF,rx:20,ry:20;
-    classDef task fill:#E7157B,stroke:#C11368,stroke-width:2px,color:#FFFFFF,rx:5,ry:5;
-    classDef wait fill:#F9E3B4,stroke:#D8B068,stroke-width:2px,color:#232F3E,rx:5,ry:5;
-    classDef choice fill:#FF9900,stroke:#E28700,stroke-width:2px,color:#FFFFFF,rx:5,ry:5;
-
-    %% Nós do diagrama
-    Start([Início]):::startEnd
-    CreateSnapshot["⚙️ CreateSnapshot (ec2:createSnapshot)"]:::task
-    WaitForSnapshot["⏳ WaitForSnapshot (Wait 60s)"]:::wait
-    CheckSnapshotStatus["🔍 CheckSnapshotStatus (ec2:describeSnapshots)"]:::task
-    IsCompleted{"Status = Completed?"}:::choice
-    NotifySuccess["✅ NotifySuccess (sns:publish)"]:::task
-    NotifyFailure["❌ NotifyFailure (sns:publish)"]:::task
-    End([Fim]):::startEnd
-
-    %% Fluxo (Arestas)
-    Start --> CreateSnapshot
+stateDiagram-v2
+    direction TB
+    
+    [*] --> CreateSnapshot : Início
     CreateSnapshot --> WaitForSnapshot
-    WaitForSnapshot --> CheckSnapshotStatus
-    CheckSnapshotStatus --> IsCompleted
+    WaitForSnapshot --> CheckSnapshotStatus : Espera de 60s
+    CheckSnapshotStatus --> IsSnapshotCompleted
+    
+    state IsSnapshotCompleted <<choice>>
+    
+    IsSnapshotCompleted --> NotifySuccess : Status = completed
+    IsSnapshotCompleted --> NotifyFailure : Status = error
+    IsSnapshotCompleted --> WaitForSnapshot : Status = pending
+    
+    NotifySuccess --> [*] : Fim
+    NotifyFailure --> [*] : Fim
+```
 
-    IsCompleted -->|Sim (completed)| NotifySuccess
-    IsCompleted -->|Erro (error)| NotifyFailure
-    IsCompleted -->|Aguardando (pending)| WaitForSnapshot
+---
 
-    NotifySuccess --> End
-    NotifyFailure --> End
+## 3. Definição da State Machine (ASL)
 
-## 3. Definição-da-state-machine-asl (code.json)
+```json
+{
+  "Comment": "Orquestração de Backup de Volume EBS da Arquitetura EC2 com Notificação",
+  "StartAt": "CreateSnapshot",
+  "States": {
+    "CreateSnapshot": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:ec2:createSnapshot",
+      "Parameters": {
+        "VolumeId.$": "$.VolumeId",
+        "Description": "Backup automatizado via Step Functions - Arquitetura HA"
+      },
+      "ResultPath": "$.SnapshotResult",
+      "Next": "WaitForSnapshot"
+    },
+    "WaitForSnapshot": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "CheckSnapshotStatus"
+    },
+    "CheckSnapshotStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:ec2:describeSnapshots",
+      "Parameters": {
+        "SnapshotIds.$": "States.Array($.SnapshotResult.SnapshotId)"
+      },
+      "ResultPath": "$.SnapshotStatus",
+      "Next": "IsSnapshotCompleted"
+    },
+    "IsSnapshotCompleted": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.SnapshotStatus.Snapshots[0].State",
+          "StringEquals": "completed",
+          "Next": "NotifySuccess"
+        },
+        {
+          "Variable": "$.SnapshotStatus.Snapshots[0].State",
+          "StringEquals": "error",
+          "Next": "NotifyFailure"
+        }
+      ],
+      "Default": "WaitForSnapshot"
+    },
+    "NotifySuccess": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:US-EAST-1:123456789012:EBS-Backup-Alerts",
+        "Message": "✅ Sucesso: O backup (Snapshot) do volume EBS da instância EC2 foi concluído com segurança."
+      },
+      "End": true
+    },
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:US-EAST-1:123456789012:EBS-Backup-Alerts",
+        "Message": "❌ Alerta: Ocorreu uma falha ao tentar criar o snapshot do volume EBS."
+      },
+      "End": true
+    }
+  }
+}
+```
 
-## 4. Diagrama Lógico de Estados
+---
 
-Detalhamento dos Estados
+## 4. Detalhamento dos Estados
 
-A. CreateSnapshot
-Usa a integração otimizada com o AWS SDK para chamar a API ec2:createSnapshot. Ele mapeia dinamicamente o parâmetro de entrada VolumeId enviado na execução. O resultado contendo o SnapshotId gerado é injetado no nó $.SnapshotResult.
+### A. CreateSnapshot
+Usa a integração otimizada com o AWS SDK para chamar a API `ec2:createSnapshot`. Ele mapeia dinamicamente o parâmetro de entrada `VolumeId` enviado na execução. O resultado contendo o `SnapshotId` gerado é injetado no nó `$.SnapshotResult`.
 
-B. WaitForSnapshot
-Um estado do tipo Wait que pausa o workflow por 60 segundos. Isso evita requisições excessivas (throttling) na API da AWS enquanto o processo de cópia de blocos ocorre em background na infraestrutura global da AWS.
+### B. WaitForSnapshot
+Um estado do tipo `Wait` que pausa o workflow por 60 segundos. Isso evita requisições excessivas (throttling) na API da AWS enquanto o processo de cópia de blocos ocorre em background na infraestrutura global da AWS.
 
-C. CheckSnapshotStatus
-Chama a API ec2:describeSnapshots filtrando especificamente pelo SnapshotId criado no primeiro passo.
+### C. CheckSnapshotStatus
+Chama a API `ec2:describeSnapshots` filtrando especificamente pelo `SnapshotId` criado no primeiro passo.
 
-D. IsSnapshotCompleted
-Um estado do tipo Choice (Decisão). Ele analisa o array retornado pela consulta e verifica o campo de estado (State):
+### D. IsSnapshotCompleted
+Um estado do tipo `Choice` (Decisão). Ele analisa o array retornado pela consulta e verifica o campo de estado (`State`):
+- Se for igual a `"completed"`, o fluxo avança para a notificação de êxito.
+- Se for igual a `"error"`, avança para a notificação de falha.
+- Se estiver em qualquer outro estado intermediário (como `"pending"`), o loop é acionado, retornando para o `WaitForSnapshot`.
 
-Se for igual a "completed", o fluxo avança para a notificação de êxito.
+### E. NotifySuccess / NotifyFailure
+Utilizam o serviço **Amazon SNS (Simple Notification Service)** para enviar mensagens para um tópico configurado (subscrito por e-mail, SMS, Chatbot ou PagerDuty), alertando o time de DevOps sobre o encerramento do processo.
 
-Se for igual a "error", avança para a notificação de falha.
+---
 
-Se estiver em qualquer outro estado intermediário (como "pending"), o loop é acionado, retornando para o WaitForSnapshot.
+## 5. Pré-requisitos e Permissões IAM
 
-E. NotifySuccess / NotifyFailure
-Utilizam o serviço Amazon SNS (Simple Notification Service) para enviar mensagens para um tópico configurado (subscrito por e-mail, SMS, Chatbot ou PagerDuty), alertando o time de DevOps sobre o encerramento do processo.
-
-5. Pré-requisitos e Permissões IAM
 Para que a State Machine seja executada corretamente, a IAM Role associada ao Step Functions precisa de uma política integrada que dê permissões explícitas sobre o EC2 e SNS.
 
-Exemplo de Política IAM (Menor Privilégio):
+**Exemplo de Política IAM (Menor Privilégio):**
 
 ```json
 {
@@ -144,16 +176,22 @@ Exemplo de Política IAM (Menor Privilégio):
     }
   ]
 }
-````
-
-6. Como Executar
-   Ao iniciar uma nova execução da State Machine, insira o seguinte payload JSON como entrada, substituindo pelo ID real do volume EBS anexado à sua instância EC2:
-
-{
-"VolumeId": "vol-0a1b2c3d4e5f6g7h8"
-}
+```
 
 ---
 
-7. Monitoramento e Tratamento de Erros
-   O AWS Step Functions grava logs detalhados de cada transição de estado. Em cenários de produção, recomenda-se habilitar a integração com o Amazon CloudWatch Logs na aba de configurações da State Machine para rastreamento de auditoria e conformidade técnica.
+## 6. Como Executar
+
+Ao iniciar uma nova execução da State Machine, insira o seguinte payload JSON como entrada, substituindo pelo ID real do volume EBS anexado à sua instância EC2:
+
+```json
+{
+  "VolumeId": "vol-0a1b2c3d4e5f6g7h8"
+}
+```
+
+---
+
+## 7. Monitoramento e Tratamento de Erros
+
+O AWS Step Functions grava logs detalhados de cada transição de estado. Em cenários de produção, recomenda-se habilitar a integração com o **Amazon CloudWatch Logs** na aba de configurações da State Machine para rastreamento de auditoria e conformidade técnica.
