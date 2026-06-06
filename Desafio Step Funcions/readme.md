@@ -58,6 +58,39 @@ O comportamento do fluxo segue a máquina de estados abaixo:
            ▼
         [ Fim ]
 
+O comportamento do fluxo segue a máquina de estados abaixo, onde implementamos um loop de espera (Wait) para monitorar a conclusão do backup em background:
+
+```mermaid
+graph TD
+    %% Estilos para combinar com a paleta da AWS
+    classDef startEnd fill:#232F3E,stroke:#232F3E,stroke-width:2px,color:#FFFFFF,rx:20,ry:20;
+    classDef task fill:#E7157B,stroke:#C11368,stroke-width:2px,color:#FFFFFF,rx:5,ry:5;
+    classDef wait fill:#F9E3B4,stroke:#D8B068,stroke-width:2px,color:#232F3E,rx:5,ry:5;
+    classDef choice fill:#FF9900,stroke:#E28700,stroke-width:2px,color:#FFFFFF;
+
+    %% Nós do diagrama
+    Start([Início]):::startEnd
+    CreateSnapshot["⚙️ CreateSnapshot<br/>(ec2:createSnapshot)"]:::task
+    WaitForSnapshot>⏳ WaitForSnapshot<br/>(Wait 60s)]:::wait
+    CheckSnapshotStatus["🔍 CheckSnapshotStatus<br/>(ec2:describeSnapshots)"]:::task
+    IsCompleted{"IsSnapshot<br/>Completed?"}:::choice
+    NotifySuccess["✅ NotifySuccess<br/>(sns:publish)"]:::task
+    NotifyFailure["❌ NotifyFailure<br/>(sns:publish)"]:::task
+    End([Fim]):::startEnd
+
+    %% Fluxo (Arestas)
+    Start --> CreateSnapshot
+    CreateSnapshot --> WaitForSnapshot
+    WaitForSnapshot --> CheckSnapshotStatus
+    CheckSnapshotStatus --> IsCompleted
+
+    IsCompleted -->|State == 'completed'| NotifySuccess
+    IsCompleted -->|State == 'error'| NotifyFailure
+    IsCompleted -->|Default (Pending)| WaitForSnapshot
+
+    NotifySuccess --> End
+    NotifyFailure --> End
+
 ## 3. Definição-da-state-machine-asl (code.json)
 
 ## 4. Diagrama Lógico de Estados
