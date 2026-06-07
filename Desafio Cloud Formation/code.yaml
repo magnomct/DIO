@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Stack AWS: Servidor Web Ubuntu com Nginx e Firewall (Security Group)'
+
+Parameters:
+  KeyName:
+    Description: ssh-dio-lab
+    Type: String
+  
+  InstanceType:
+    Description: Tamanho da instância EC2.
+    Type: String
+    Default: t2.micro
+    AllowedValues: 
+      - t2.micro
+      - t3.micro
+      - t3.small
+
+Resources:
+  # 1. O Firewall (Security Group)
+  WebServerFirewall:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Regras de firewall para o servidor Nginx
+      SecurityGroupIngress:
+        # Regra 1: Permite tráfego HTTP (Web) de qualquer lugar
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        
+        # Regra 2: Permite acesso SSH para administracao
+        # Nota de Seguranca: Em producao, troque 0.0.0.0/0 pelo seu IP publico real
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  # 2. O Servidor (Instância EC2)
+  NginxServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref WebServerFirewall
+      # Utiliza o Systems Manager (SSM) para buscar sempre a AMI mais recente do Ubuntu 22.04
+      ImageId: 'resolve:ssm:/aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id'
+      
+      # 3. Automação de Instalação (User Data)
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Atualiza os pacotes e instala o Nginx
+          apt-get update -y
+          apt-get install -y nginx
+          
+          # Garante que o servico inicie no boot
+          systemctl start nginx
+          systemctl enable nginx
+          
+          # Cria uma pagina inicial personalizada
+          echo "<!DOCTYPE html>
+          <html>
+          <head><title>Nginx via CloudFormation</title></head>
+          <body style='font-family: Arial, sans-serif; text-align: center; margin-top: 50px;'>
+            <h1>🚀 Servidor Ubuntu + Nginx Implantado com Sucesso!</h1>
+            <p>A infraestrutura como código funcionou perfeitamente.</p>
+          </body>
+          </html>" > /var/www/html/index.html
+
+Outputs:
+  PublicURL:
+    Description: URL publica para acessar o servidor Nginx no navegador
+    Value: !Sub 'http://${NginxServer.PublicDnsName}'
+  
+  SSHCommand:
+    Description: Comando para acessar o servidor via terminal
+    Value: !Sub 'ssh -i "SUA_CHAVE.pem" ubuntu@${NginxServer.PublicIp}'
