@@ -1,0 +1,62 @@
+[
+  {
+    "id": "NF-1001",
+    "cliente": "Empresa Alfa LTDA",
+    "valor_total": 1500.50,
+    "data_emissao": "2026-06-25T10:00:00Z"
+  },
+  {
+    "id": "NF-1002",
+    "cliente": "Comercial Beta SA",
+    "valor_total": 320.00,
+    "data_emissao": "2026-06-25T10:15:00Z"
+  },
+  {
+    "id": "NF-1003",
+    "cliente": "Servicos Gama EIRELI",
+    "valor_total": 4500.75,
+    "data_emissao": "2026-06-25T10:30:00Z"
+  },
+  {
+    "id": "NF-1004",
+    "cliente": "Distribuidora Delta",
+    "valor_total": 89.90,
+    "data_emissao": "2026-06-25T10:45:00Z"
+  },
+  {
+    "id": "NF-1005",
+    "cliente": "Tech Solutions LTDA",
+    "valor_total": 12500.00,
+    "data_emissao": "2026-06-25T11:00:00Z"
+  },
+  {
+    "id": "NF-1006",
+    "cliente": "Supermercado Omega",
+    "valor_total": 670.30,
+    "data_emissao": "2026-06-25T11:20:00Z"
+  },
+  {
+    "id": "NF-1007",
+    "cliente": "Padaria Pao Quente",
+    "valor_total": 45.00,
+    "data_emissao": "2026-06-25T11:35:00Z"
+  },
+  {
+    "id": "NF-1008",
+    "cliente": "Livraria do Saber",
+    "valor_total": 120.00,
+    "data_emissao": "2026-06-25T12:00:00Z"
+  },
+  {
+    "id": "NF-1009",
+    "cliente": "Clinica Medica Saude",
+    "valor_total": 350.00,
+    "data_emissao": "2026-06-25T13:10:00Z"
+  },
+  {
+    "id": "NF-1010",
+    "cliente": "Restaurante Saboroso",
+    "valor_total": 85.60,
+    "data_emissao": "2026-06-25T13:45:00Z"
+  }
+]
